@@ -1,0 +1,267 @@
+---
+title: "NetworkAnalysis_PositivePsychology"
+author: "Hyein"
+date: "2025-04-12"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Descriptive statistics
+
+```{r}
+#import dataset
+library(readxl)
+PPI_dataset <- read_excel("/Users/hyeinkim/Documents/N741/milestone/PPI_dataset.xlsx")
+
+
+library(dplyr)
+library(tidyr)
+
+PPI_dataset %>%
+  summarise(across(everything(), ~ mean(is.na(.) | . == -999) * 100)) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Variable",
+               values_to = "Missing_Percentage") %>%
+  mutate(Missing_Percentage = round(Missing_Percentage, 2)) %>%
+  arrange(desc(Missing_Percentage))
+
+
+#missing data handling
+# convert "-999" to NA in the dataset 
+PPI_dataset[PPI_dataset == -999] <- NA
+
+# remove row with NA 
+PPI_dataset <- na.omit(PPI_dataset)
+```
+
+#name categorical variables
+
+```{r}
+PPI_dataset$Income <- factor(PPI_dataset$Income)
+PPI_dataset$Sex <- factor(PPI_dataset$Sex)
+
+PPI_dataset$Income <- factor(PPI_dataset$Income,
+                             levels = c(1, 2, 3, 4, 5),
+                             labels = c("<$9999",
+                                        "$10,000–$29,999",
+                                        "$30,000–$59,999",
+                                        "$60,000–$89,999",
+                                        ">$90,000"))
+
+PPI_dataset$Sex <- factor(PPI_dataset$Sex,
+                          levels = c(1, 2),
+                          labels = c("Male", "Female"))
+```
+
+
+
+#Basic Descriptive Statistics, Table 1
+
+```{r}
+summary(PPI_dataset[, c("Flourish_PreTotal", "CESD_PreTotal", "AHS_PreTotal",
+                 "BMPN_Sat_Aut_Pre","BMPN_Sat_Rel_Pre", "BMPN_Sat_Com_Pre",
+                 "PANAS_Pos_Pre", "AGE", "Income", "Sex")])
+
+#Mean and SD
+library(table1)
+table1(~Flourish_PreTotal+CESD_PreTotal+AHS_PreTotal+BMPN_Sat_Aut_Pre+BMPN_Sat_Rel_Pre+BMPN_Sat_Com_Pre+PANAS_Pos_Pre+AGE+Income+Sex, data=PPI_dataset) 
+```
+
+
+#Correlation among the psychological constructs
+
+
+```{r}
+library(dplyr)
+cor_data <- PPI_dataset %>%
+  select(Flourish_PreTotal, CESD_PreTotal, AHS_PreTotal, 
+         BMPN_Sat_Aut_Pre, BMPN_Sat_Rel_Pre, BMPN_Sat_Com_Pre, PANAS_Pos_Pre)
+
+cor_matrix <- cor(cor_data, use = "complete.obs", method = "pearson")
+cor_matrix
+
+
+library(corrr)
+cor_data %>% 
+  correlate() %>% 
+  stretch() %>% 
+  arrange(desc(r))
+
+
+
+```
+
+#Figure 1. Heatmap plot 
+```{r}
+library(ggcorrplot)
+ggcorrplot(cor_matrix, 
+           lab = TRUE, 
+           type = "lower", 
+           title = "Correlation Between Flourishing and Psychological Constructs")
+```
+
+Network analysis
+
+**Select only PANAS_pro and Flourishing**
+```{r}
+
+library(bootnet)
+library(qgraph)
+library(dplyr)
+
+#Preprocessing
+
+#select PANAS_positive and Flourishing scale
+
+network_data1 <- PPI_dataset[, c("PANAS_1", "PANAS_3", "PANAS_5", "PANAS_9", "PANAS_10", "PANAS_12", "PANAS_14", "PANAS_16", "PANAS_17", "PANAS_19","Flourish_1", "Flourish_2", "Flourish_3", "Flourish_4", "Flourish_5", "Flourish_6", "Flourish_7", "Flourish_8")]
+
+network_data1 <-na.omit(network_data1)
+network_data1 <- network_data1[, sapply(network_data1, function(x) sd(x, na.rm = TRUE) != 0)]
+
+library(bootnet)
+network_model1 <- estimateNetwork(network_data1,
+                                  default = "EBICglasso",
+                                  corMethod = "cor_auto")
+plot(network_model1)
+
+```
+
+#flourishing and AHS (Adult Hope Scale)
+```{r}
+
+network_data2 <- PPI_dataset[, c("AHS_1", "AHS_2", "AHS_3", "AHS_4", "AHS_5", "AHS_6", "AHS_7", "AHS_8", "AHS_9",  "AHS_10", "AHS_11", "Flourish_1", "Flourish_2", "Flourish_3", "Flourish_4", "Flourish_5", "Flourish_6", "Flourish_7", "Flourish_8")]
+
+
+network_data2 <-na.omit(network_data2)
+network_data2 <- network_data2[, sapply(network_data2, function(x) sd(x, na.rm = TRUE) != 0)]
+
+library(bootnet)
+library(qgraph)
+library(dplyr)
+
+network_model2 <- estimateNetwork(network_data2,
+                                  default = "EBICglasso",
+                                  corMethod = "cor")
+plot(network_model2)
+
+```
+
+"An empty network was selected to be the best fitting network."
+--> What should I do to solve this problem? 
+
+
+#CESD recoding evaluation
+```{r}
+
+# 1. select only necessary variables 
+cesd_vars <- PPI_dataset %>%
+  select(CESD_PreTotal, CESD_5, CESD_8)
+
+# 2.correlation test 
+cor.test(cesd_vars$CESD_5, cesd_vars$CESD_PreTotal)  # CESD_5 vs Total
+cor.test(cesd_vars$CESD_8, cesd_vars$CESD_PreTotal)  # CESD_8 vs Total
+
+
+# make new recoded variables 
+cesd_vars <- cesd_vars %>%
+  mutate(
+    CESD_5_R = 3 - CESD_5,
+    CESD_8_R = 3 - CESD_8
+  )
+
+# recheck the correlation
+cor.test(cesd_vars$CESD_5_R, cesd_vars$CESD_PreTotal)
+cor.test(cesd_vars$CESD_8_R, cesd_vars$CESD_PreTotal)
+
+```
+
+
+# Based on the correlation analyses, both CESD_5 and CESD_8 show strong positive correlations with the total CES-D score (CESD_PreTotal), while their reverse-coded versions (CESD_5_R and CESD_8_R) show strong negative correlations.
+# This pattern indicates that the original CESD_5 and CESD_8 variables were already reverse-coded in the raw dataset. Applying reverse coding again (3 - x) in this case results in inverting the intended direction, leading to an incorrect interpretation.
+# Therefore, reverse coding is not necessary, as the original variables are already in the correct (reverse-coded) format.
+
+
+
+#flourishing and CESD (Depression)
+```{r}
+network_data3 <- PPI_dataset[, c("CESD_1", "CESD_2", "CESD_3", "CESD_4", "CESD_5", 
+  "CESD_6", "CESD_7", "CESD_8", "CESD_9", "CESD_10", "Flourish_1", "Flourish_2", "Flourish_3", "Flourish_4", "Flourish_5", "Flourish_6", "Flourish_7", "Flourish_8")]
+
+
+network_data3 <-na.omit(network_data3)
+network_data3 <- network_data3[, sapply(network_data3, function(x) sd(x, na.rm = TRUE) != 0)]
+
+library(bootnet)
+library(qgraph)
+library(dplyr)
+
+network_model3 <- estimateNetwork(network_data3,
+                                  default = "EBICglasso",
+                                  corMethod = "cor_auto")
+plot(network_model3)
+```
+
+
+#flourishing and Autonomy
+```{r}
+
+
+network_data4 <- PPI_dataset[, c("PsyNeed_1",  "PsyNeed_7", "PsyNeed_13", "PsyNeed_19", "Flourish_1", "Flourish_2", "Flourish_3", "Flourish_4", "Flourish_5", "Flourish_6", "Flourish_7", "Flourish_8")]
+
+
+network_data4 <-na.omit(network_data4)
+network_data4 <- network_data4[, sapply(network_data4, function(x) sd(x, na.rm = TRUE) != 0)]
+
+library(bootnet)
+library(qgraph)
+library(dplyr)
+
+network_model4 <- estimateNetwork(network_data4,
+                                  default = "EBICglasso",
+                                  corMethod = "cor_auto")
+plot(network_model4)
+```
+
+#flourishing and Relatedness
+```{r}
+network_data5 <- PPI_dataset[, c("PsyNeed_3",  "PsyNeed_9", "PsyNeed_15", "PsyNeed_21", "Flourish_1", "Flourish_2", "Flourish_3", "Flourish_4", "Flourish_5", "Flourish_6", "Flourish_7", "Flourish_8")]
+
+network_data5 <-na.omit(network_data5)
+network_data5 <- network_data5[, sapply(network_data5, function(x) sd(x, na.rm = TRUE) != 0)]
+
+library(bootnet)
+library(qgraph)
+library(dplyr)
+
+network_model5 <- estimateNetwork(network_data5,
+                                  default = "EBICglasso",
+                                  corMethod = "cor_auto")
+plot(network_model5)
+
+
+```
+
+#flourishing and Competence
+```{r}
+network_data6 <- PPI_dataset[, c("PsyNeed_5",  "PsyNeed_11", "PsyNeed_17", "PsyNeed_23", "Flourish_1", "Flourish_2", "Flourish_3", "Flourish_4", "Flourish_5", "Flourish_6", "Flourish_7", "Flourish_8")]
+
+
+network_data6 <-na.omit(network_data6)
+network_data6 <- network_data6[, sapply(network_data6, function(x) sd(x, na.rm = TRUE) != 0)]
+
+library(bootnet)
+library(qgraph)
+library(dplyr)
+
+network_model6 <- estimateNetwork(network_data6,
+                                  default = "EBICglasso",
+                                  corMethod = "cor_auto")
+plot(network_model6)
+
+
+```
